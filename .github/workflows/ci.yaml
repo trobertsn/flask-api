@@ -1,0 +1,60 @@
+# ci.yaml — the CI pipeline. GitHub runs this automatically on every push.
+name: Build and Push
+
+# WHEN does this pipeline run?
+on:
+  push:
+    branches:
+      - main        # run whenever code is pushed to the main branch
+
+# Permissions this workflow needs
+# packages: write = allowed to push images to GHCR
+permissions:
+  contents: read
+  packages: write
+
+# A pipeline is made of one or more JOBS
+jobs:
+  # JOB 1: run tests, then build and push the image
+  build:
+    # runs-on = what kind of machine GitHub should run this on
+    # ubuntu-latest = a fresh Ubuntu VM GitHub spins up for us (this is where Docker lives)
+    runs-on: ubuntu-latest
+
+    steps:
+      # STEP 1: check out (download) your repo code onto the runner
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # STEP 2: install Python so we can run tests
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # STEP 3: install dependencies and run the tests
+      # If ANY test fails, the pipeline stops here — no image gets built
+      - name: Run tests
+        run: |
+          pip install -r requirements.txt pytest
+          pytest -v
+
+      # STEP 4: log in to GHCR (GitHub Container Registry)
+      # Uses a built-in token GitHub provides automatically — no secrets to manage
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # STEP 5: build the image from your Dockerfile and push it to GHCR
+      # Tagged two ways: with the git commit SHA (unique) and 'latest'
+      - name: Build and push image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/trobertsn/flask-api:${{ github.sha }}
+            ghcr.io/trobertsn/flask-api:latest

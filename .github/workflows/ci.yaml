@@ -1,46 +1,35 @@
-# ci.yaml — the CI pipeline. GitHub runs this automatically on every push.
-name: Build and Push
+name: Build and Deploy
 
-# WHEN does this pipeline run?
 on:
   push:
     branches:
-      - main        # run whenever code is pushed to the main branch
+      - main
 
-# Permissions this workflow needs
-# packages: write = allowed to push images to GHCR
 permissions:
   contents: read
   packages: write
 
-# A pipeline is made of one or more JOBS
 jobs:
-  # JOB 1: run tests, then build and push the image
+  # JOB 1: test, build, and push the image (same as before)
   build:
-    # runs-on = what kind of machine GitHub should run this on
-    # ubuntu-latest = a fresh Ubuntu VM GitHub spins up for us (this is where Docker lives)
     runs-on: ubuntu-latest
-
+    # Expose the image SHA tag to the next job via an output
+    outputs:
+      image_tag: ${{ github.sha }}
     steps:
-      # STEP 1: check out (download) your repo code onto the runner
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # STEP 2: install Python so we can run tests
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      # STEP 3: install dependencies and run the tests
-      # If ANY test fails, the pipeline stops here — no image gets built
       - name: Run tests
         run: |
           pip install -r requirements.txt pytest
           pytest -v
 
-      # STEP 4: log in to GHCR (GitHub Container Registry)
-      # Uses a built-in token GitHub provides automatically — no secrets to manage
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -48,8 +37,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # STEP 5: build the image from your Dockerfile and push it to GHCR
-      # Tagged two ways: with the git commit SHA (unique) and 'latest'
       - name: Build and push image
         uses: docker/build-push-action@v5
         with:
@@ -58,3 +45,32 @@ jobs:
           tags: |
             ghcr.io/trobertsn/flask-api:${{ github.sha }}
             ghcr.io/trobertsn/flask-api:latest
+
+  # JOB 2: update the config repo with the new image tag (the GitOps trigger)
+  update-config:
+    needs: build              # only run AFTER build succeeds
+    runs-on: ubuntu-latest
+    steps:
+      # Check out the CONFIG repo (not this one) using the PAT
+      - name: Checkout config repo
+        uses: actions/checkout@v4
+        with:
+          repository: trobertsn/flask-api-config
+          token: ${{ secrets.CONFIG_REPO_TOKEN }}   # the PAT you stored
+
+      # Replace the image line in deployment.yaml with the new SHA tag
+      - name: Update image tag
+        run: |
+          # sed replaces whatever image tag is there with the new commit SHA
+          sed -i "s|image: ghcr.io/trobertsn/flask-api:.*|image: ghcr.io/trobertsn/flask-api:${{ needs.build.outputs.image_tag }}|" deployment.yaml
+          echo "Updated deployment.yaml:"
+          grep "image:" deployment.yaml
+
+      # Commit and push the change to the config repo — this triggers ArgoCD
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add deployment.yaml
+          git commit -m "Update image to ${{ needs.build.outputs.image_tag }}"
+          git push

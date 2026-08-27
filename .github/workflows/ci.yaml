@@ -62,15 +62,15 @@ jobs:
       - name: Update image tag
         run: |
           # sed replaces whatever image tag is there with the new commit SHA
-          sed -i "s|image: ghcr.io/trobertsn/flask-api:.*|image: ghcr.io/trobertsn/flask-api:${{ needs.build.outputs.image_tag }}|" deployment.yaml
+          sed -i "s|image: ghcr.io/trobertsn/flask-api:.*|image: ghcr.io/trobertsn/flask-api:${{ needs.build.outputs.image_tag }}|" staging/deployment.yaml
           echo "Updated deployment.yaml:"
-          grep "image:" deployment.yaml
+          grep "image:" staging/deployment.yaml
 
       # Commit and push the change to the config repo — this triggers ArgoCD
       - name: Commit and push
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          git add deployment.yaml
+          git add staging/deployment.yaml
           git commit -m "Update image to ${{ needs.build.outputs.image_tag }}"
           git push

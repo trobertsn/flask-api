@@ -13,7 +13,7 @@ def health():
 
 @app.route("/version")
 def version():
-    return jsonify({"version": "1.0.0"})
+    return jsonify({"version": "2.0.0"})
 
 
 @app.route("/tasks", methods=["GET"])

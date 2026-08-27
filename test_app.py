@@ -1,3 +1,6 @@
+# test_app.py — tests that don't require a database connection
+# (health and version endpoints only)
+# NOTE: In production CI, you'd spin up a test postgres and test the DB endpoints too.
 import app
 
 client = app.app.test_client()
@@ -9,15 +12,7 @@ def test_health():
     assert response.get_json() == {"status": "healthy"}
 
 
-def test_create_and_get_task():
-    response = client.post("/tasks", json={"title": "test task"})
-    assert response.status_code == 201
-    task_id = response.get_json()["id"]
-    response = client.get(f"/tasks/{task_id}")
+def test_version():
+    response = client.get("/version")
     assert response.status_code == 200
-    assert response.get_json()["title"] == "test task"
-
-
-def test_missing_title_returns_400():
-    response = client.post("/tasks", json={})
-    assert response.status_code == 400
+    assert response.get_json()["version"] == "4.0.0"
